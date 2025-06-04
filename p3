@@ -1,0 +1,232 @@
+#!/bin/bash
+
+# Diretórios de configuração
+CONFIG_DIR="$HOME/.backup_manager"
+LOG_DIR="$CONFIG_DIR/logs"
+CRON_DIR="$CONFIG_DIR/cronjobs"
+
+# Cria diretórios necessários, caso não existam
+mkdir -p "$CONFIG_DIR" "$LOG_DIR" "$CRON_DIR"
+
+# Função de log
+log() {
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# Exibe ajuda detalhada
+mostrar_ajuda() {
+    cat << EOF
+
+-----> Gestor de backupa <-----
+
+Opções disponíveis:
+
+  1 ---> Backup imediato
+         - Executa um backup agora.
+         - Pergunta origem, destino e, opcionalmente, credenciais SSH.
+
+  2 ---> Agendar backup recorrente
+         - Cria um cron job para rodar o backup automaticamente.
+         - Pergunta: nome do agendamento, origem, destino, credenciais SSH (opcional) 
+         e campos de data/hora no formato cron (minuto, hora, dia do mês, mês, dia da semana).
+
+  3 ---> Listar backups agendados
+         - Mostra todos os cron jobs criados pelo script (os scripts .sh em ~/.backup_manager/cronjobs).
+
+  4 ---> Remover backup agendado
+         - Pergunta o nome do agendamento e remove o cron job + arquivos associados.
+
+  5 ---> Mostrar ajuda
+         - Exibe esta tela de ajuda.
+
+  0 ---> Sair
+         - Encerra o programa.
+
+EOF
+}
+
+# Valida campos de agendamento no formato cron
+validate_cron() {
+    [[ "$1" =~ ^([0-9]|[1-5][0-9]|\*)$ ]] &&     # minuto
+    [[ "$2" =~ ^([0-9]|1[0-9]|2[0-3]|\*)$ ]] &&  # hora
+    [[ "$3" =~ ^([1-9]|[12][0-9]|3[01]|\*)$ ]] && # dia do mês
+    [[ "$4" =~ ^([1-9]|1[0-2]|\*)$ ]] &&         # mês
+    [[ "$5" =~ ^([0-6]|\*)$ ]]                   # dia da semana
+}
+
+# Executa backup imediato
+backup_imediato() {
+    RSYNC_OPTIONS="-avz --delete"
+    LOG_FILE="$LOG_DIR/backup_$(date +'%Y%m%d').log"
+    log "Iniciando backup imediato"
+
+    read -p "Digite o caminho de origem: " source_path
+    read -p "Digite o caminho de destino: " dest_path
+    read -p "Necessita de credenciais SSH (s/n): " need_creds
+    echo
+
+    if [[ "$need_creds" =~ ^[Ss]$ ]]; then
+        read -p "Digite o usuário SSH: " ssh_user
+        read -p "Digite o endereço do host SSH: " ssh_host
+        read -s -p "Digite a senha SSH: " ssh_pass
+        echo
+
+        export SSHPASS="$ssh_pass"
+        SOURCE="${ssh_user}@${ssh_host}:${source_path}"
+        RSYNC_OPTIONS="$RSYNC_OPTIONS -e 'sshpass -e ssh'"
+    else
+        SOURCE="$source_path"
+    fi
+
+    log "Backup: $SOURCE → $dest_path"
+    if eval rsync $RSYNC_OPTIONS "$SOURCE" "$dest_path" >> "$LOG_FILE" 2>&1; then
+        log "Backup concluído com sucesso!"
+    else
+        log "Erro: Falha ao executar o backup."
+        return 1
+    fi
+    echo "Pressione Enter para voltar ao menu."
+    read
+}
+
+# Agenda um backup recorrente (cron)
+backup_agendado() {
+    log "Iniciando agendamento de backup"
+
+    read -p "Digite um nome único para este agendamento: " job_name
+    read -p "Digite o caminho de origem: " source_path
+    read -p "Digite o caminho de destino: " dest_path
+    read -p "Necessita de credenciais SSH (s/n): " need_creds
+    echo
+
+    if [[ "$need_creds" =~ ^[Ss]$ ]]; then
+        read -p "Digite o usuário SSH: " ssh_user
+        read -p "Digite o endereço do host SSH: " ssh_host
+        read -s -p "Digite a senha SSH: " ssh_pass
+        echo
+        # Salva a senha para o cron job
+        echo "SSHPASS='$ssh_pass'" > "$CRON_DIR/$job_name.pass"
+        chmod 600 "$CRON_DIR/$job_name.pass"
+        SOURCE="${ssh_user}@${ssh_host}:${source_path}"
+    else
+        SOURCE="$source_path"
+    fi
+
+    echo "Configuração do cron:"
+    read -p "Minuto (0-59 ou *): " minute
+    read -p "Hora (0-23 ou *): " hour
+    read -p "Dia do Mês (1-31 ou *): " day
+    read -p "Mês (1-12 ou *): " month
+    read -p "Dia da semana (0-6 ou *): " weekday
+    echo
+
+    if ! validate_cron "$minute" "$hour" "$day" "$month" "$weekday"; then
+        log "Erro: Valores de cron inválidos."
+        echo "Pressione Enter para voltar ao menu."
+        read
+        return 1
+    fi
+
+    local script_path="$CRON_DIR/$job_name.sh"
+
+    cat > "$script_path" << EOF
+#!/bin/bash
+
+CONFIG_DIR="\$HOME/.backup_manager"
+LOG_DIR="\$CONFIG_DIR/logs"
+CRON_DIR="\$CONFIG_DIR/cronjobs"
+RSYNC_OPTIONS="-avz --delete"
+
+if [ -f "\$CRON_DIR/$job_name.pass" ]; then
+    source "\$CRON_DIR/$job_name.pass"
+    export SSHPASS
+    RSYNC_OPTIONS="\$RSYNC_OPTIONS -e 'sshpass -e ssh'"
+fi
+
+LOG="\$LOG_DIR/${job_name}_\$(date +'%Y%m%d').log"
+echo "[\$(date +'%Y-%m-%d %H:%M:%S')] Iniciando backup agendado: $job_name" >> "\$LOG"
+rsync \$RSYNC_OPTIONS "$SOURCE" "$dest_path" >> "\$LOG" 2>&1
+echo "[\$(date +'%Y-%m-%d %H:%M:%S')] Backup $job_name concluído" >> "\$LOG"
+EOF
+
+    chmod +x "$script_path"
+    (crontab -l 2>/dev/null; echo "$minute $hour $day $month $weekday $script_path") | crontab -
+
+    log "Backup agendado com sucesso: $job_name"
+    echo "Agendamento - $minute $hour $day $month $weekday"
+    echo "Pressione Enter para voltar ao menu."
+    read
+}
+
+# Exibe lista de backups agendados
+listar_backups() {
+    echo "Backups agendados:"
+    crontab -l 2>/dev/null | grep -F "$CRON_DIR/" | while read -r line; do
+        job_script=$(echo "$line" | awk '{print $6}')
+        job_name=$(basename "$job_script" .sh)
+        schedule=$(echo "$line" | awk '{print $1, $2, $3, $4, $5}')
+        echo "  • Nome: $job_name  |  Agendamento: $schedule"
+    done
+    echo
+    echo "Pressione Enter para continuar."
+    read
+}
+
+# Remove um backup agendado
+remove_backups() {
+    listar_backups
+    read -p "Digite o nome do backup que deseja remover: " job_name
+    echo
+
+    crontab -l 2>/dev/null | grep -v "$CRON_DIR/$job_name.sh" | crontab -
+    rm -f "$CRON_DIR/$job_name.sh" "$CRON_DIR/$job_name.pass" 2>/dev/null
+
+    log "Backup agendado '$job_name' removido com sucesso!"
+    echo "Pressione Enter para voltar ao menu."
+    read
+}
+
+# Loop principal do menu
+while true; do
+    clear
+    echo "-------------> Gestão de backups <-------------"
+    echo "| 1 -----> Backup imediato                    |"
+    echo "| 2 -----> Agendar backup recorrente          |"
+    echo "| 3 -----> Listar backups agendados           |"
+    echo "| 4 -----> Remover backup agendado            |"
+    echo "| 5 -----> Mostrar ajuda                      |"
+    echo "| 0 -----> Sair                               |"
+    echo "|_____________________________________________|"
+    echo ""
+    read -p "Escolha uma opção: " opcao
+    echo
+
+    case "$opcao" in
+        1)
+            backup_imediato
+            ;;
+        2)
+            backup_agendado
+            ;;
+        3)
+            listar_backups
+            ;;
+        4)
+            remove_backups
+            ;;
+        5)
+            mostrar_ajuda
+            echo "Pressione Enter para voltar ao menu."
+            read
+            ;;
+        0)
+            echo "A sair. :)"
+            exit 0
+            ;;
+        *)
+            echo "Opção inválida. Prima Enter para tentar novamente"
+            read
+            ;;
+    esac
+done
+

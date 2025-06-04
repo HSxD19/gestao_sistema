@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# Funcao 1.1 - Criacao de contas em lote
+criar_contas_em_lote() { 
+	echo "---- Criacao de Contas em Lote ----"
+	read -p "Sufixo do nome de utilizador (ex: turmaX): " sufixo
+	read -p "Numero de contas a criar (1-99): " num_contas
+	read -p "Criar diretoria home? (s/n): " criar_home
+	read -p "Diretoria base para home (ex: /home): " dir_base
+	read -p "Shell por omissao (ex: /bin/bash): " shell
+	read -p "Grupo inicial dos utilizadores: " grupo
+
+	if ! getent group "$grupo" > /dev/null; then
+		echo "Grupo nao existe. A criar grupo '$grupo'..."
+		groupadd "$grupo"
+		echo "Grupo '$grupo' criado."
+	fi
+
+	for i in $(seq -w 1 "$num_contas"); do
+		username="${sufixo}${i}"
+		if id "$username" &>/dev/null; then
+			echo "Utilizador $username ja existe. A saltar..."
+			continue
+		fi
+
+		cmd="useradd -g $grupo"
+		[ "$criar_home" == "s" ] && cmd+=" -m -d $dir_base/$username"
+		[ -n "$shell" ] && cmd+=" -s $shell"
+		cmd+=" $username"
+
+		eval $cmd
+		echo "Utilizador $username criado."
+	done
+}
+
+# Funcao 1.2 - Alteracao de Password
+alterar_password() {
+	echo "----Alterar Password----"
+	read -p "Nome do utilizador: " username
+	if id "$username" &>/dev/null; then
+		read -s -p "Nova password: " password
+		echo
+		echo "$username:$password" | chpasswd && echo "Password alterada com sucesso." || echo "Erro ao alterar password."
+	else
+		echo "Utilizador $username nao existe."
+	fi
+}
+
+# Funcao 1.3 - Suspender Conta
+suspender_conta() {
+	echo "---- Suspender Conta ----"
+	read -p "Nome do utilizador a suspender: " username
+	if id "$username" &>/dev/null; then
+		usermod -L "$username" && echo "Conta $username suspensa." || echo "Erro ao suspender conta."
+	else
+		echo "Utilizador $username nao existe"
+	fi
+}
+
+#Funcao 1.4 - Adicionar Utilizador a um Grupo
+adicionar_a_grupo() {
+	echo "---- Adicionar utilizador a um Grupo ----"
+	read -p "Nome do utilizador: " username
+	if ! id "$username" &>/dev/null; then
+		echo "Utilizador $username nao existe."
+		return
+	fi
+
+	read -p "Nome do grupo: " grupo
+	if ! getent group "$grupo" > /dev/null; then
+		echo "Grupo $grupo nao existe. A criar..."
+		groupadd "$grupo" || { echo "Erro ao criar grupo."; return; }
+	fi
+
+	usermod -aG "$grupo" "$username" && echo "Utilizador $username adicionado ao grupo $grupo."
+}
+
+# Menu de Gestao de Contas de Utilizador 
+menu_principal() {
+	while true; do
+		echo ""
+		echo "-----------> Gestao de contas de utilizador <-----------"
+		echo "| 1 -----> Criar contas de utilizador em lote          |"
+		echo "| 2 -----> Alterar password de um utilizador           |"
+		echo "| 3 -----> Suspender uma conta de utilizador           |"
+		echo "| 4 -----> Adicionar utilizador a um grupo             |"
+		echo "| 0 -----> Voltar ao menu principal                    |"
+		echo "|______________________________________________________|"
+                echo "  "
+		read -p "Escolha uma opcao: " opcao
+
+		case $opcao in
+			1) criar_contas_em_lote ;;
+			2) alterar_password ;;
+			3) suspender_conta ;;
+			4) adicionar_a_grupo ;;
+			0) break ;;
+			*) echo "Opcao invalida, tente de novo." ;;
+		esac
+	done
+}
+
+
+# Iniciar script
+menu_principal

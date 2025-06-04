@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Menu principal
+while true; do
+    clear
+    echo "|-----------> Gestão do Sistema Unix <-----------|"
+    echo "| 1 -----> Gestão de contas de utilizador.       | "
+    echo "| 2 -----> Gestão de ficheiros e diretoria.      | "
+    echo "| 3 -----> Gestão de backups.                    | "
+    echo "| 4 -----> Relatório sobre utilizadores.         | "
+    echo "| 5 -----> Script de teste.                      | "
+    echo "| 0 -----> Sair.                                 | "
+    echo "|________________________________________________|"
+    echo "                                                  "
+    read -p "Escolha uma opção: " opcao
+
+    case "$opcao" in
+        1)
+            if [[ -x ./p1 ]]; then
+                ./p1
+            else
+                echo "Erro: Script 'p1' não encontrado ou sem permissões de execução."
+                read -p "Prima Enter para tentar de novo."
+            fi
+            ;;
+        2)
+            if [[ -x ./p2 ]]; then
+                ./p2
+            else
+                echo "Erro: Script 'p2' não encontrado ou sem permissões de execução."
+                read -p "Prima Enter para tentar de novo."
+            fi
+            ;;
+        3)
+            if [[ -x ./p3 ]]; then
+                ./p3
+            else
+                echo "Erro: Script 'p3.sh' não encontrado ou sem permissões de execução."
+                read -p "Prima Enter para tentar de novo."
+            fi
+            ;;
+        4)
+            if [[ -x ./p4 ]]; then
+                ./p4
+            else
+                echo "Erro: Script 'p4.sh' não encontrado ou sem permissões de execução."
+                read -p "Prima Enter para tentar de novo."
+            fi
+            ;;
+        5)
+            if [[ -x ./p5 ]]; then
+                ./p5
+            else
+                echo "Erro: Script 'p5' não encontrado ou sem permissões de execução."
+                read -p "Prima Enter para tentar de novo."
+            fi
+            ;;
+        0)
+            echo "A sair :)"
+            break
+            ;;
+        *)
+            echo "Opção inválida, tente novamente."
+            read -p "Prima Enter para tentar de novo."
+            ;;
+    esac
+done

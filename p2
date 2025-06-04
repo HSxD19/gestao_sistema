@@ -1,0 +1,136 @@
+#!/bin/bash
+
+mostrar_detalhes() {
+    read -p "Caminho do ficheiro ou diretoria: " caminho
+    if [ -e "$caminho" ]; then
+        echo "Informações de: $caminho"
+        echo "-----------------------------"
+        echo "Tipo: $(file -b "$caminho")"
+        echo "Tamanho: $(stat -c %s "$caminho") bytes"
+        echo "Permissões: $(stat -c %A "$caminho")"
+        echo "Dono: $(stat -c %U "$caminho")"
+        echo "Grupo: $(stat -c %G "$caminho")"
+        echo "Último acesso: $(stat -c %x "$caminho")"
+        echo "Última modificação: $(stat -c %y "$caminho")"
+        echo "Última alteração de metadados: $(stat -c %z "$caminho")"
+    else
+        echo "O caminho especificado não existe."
+    fi
+}
+
+alterar_dono() {
+    read -p "Novo dono: " novo_dono
+    echo "Especifique os ficheiros/diretorias (separados por espaço):"
+    read -a ficheiros        
+    for f in "${ficheiros[@]}"; do
+        if [ -e "$f" ]; then
+            sudo chown "$novo_dono" "$f"
+            echo "Dono alterado para $novo_dono em $f"
+        else 
+            echo "$f não encontrado."
+        fi
+    done
+}
+
+alterar_permissoes() {
+    read -p "Permissões (formato octal, ex: 755): " perms
+    echo "Especifique os ficheiros/diretorias (separados por espaço):"
+    read -a ficheiros
+    for f in "${ficheiros[@]}"; do
+        if [ -e "$f" ]; then
+            chmod "$perms" "$f"
+            echo "Permissões $perms aplicadas a $f"
+        else
+            echo "$f não encontrado."
+        fi
+    done
+}
+
+procurar_ficheiros() {
+    read -p "Diretoria onde começar a pesquisa: " dir
+    read -p "Padrão do nome (ex: *.txt): " padrao
+    read -p "Deseja guardar os resultados num ficheiro? (s/n): " guardar
+
+    resultados=$(find "$dir" -name "$padrao" 2>/dev/null)
+
+    if [ -z "$resultados" ]; then
+        echo "Nenhum ficheiro encontrado com o padrão especificado."
+    else
+        echo "Resultados encontrados:"
+        echo "$resultados"
+        if [[ "$guardar" == "s" || "$guardar" == "S" ]]; then
+            read -p "Nome do ficheiro para guardar os resultados: " ficheiro_saida
+            echo "$resultados" > "$ficheiro_saida"
+            echo "Resultados guardados em $ficheiro_saida"
+        fi
+    fi
+}
+
+renomear_em_lote() {
+    read -p "Diretoria com os ficheiros: " dir
+    read -p "Padrão dos ficheiros a alterar (ex: *.txt): " padrao
+    read -p "Ação (prefixo/sufixo/substituir): " acao
+
+    case "$acao" in
+        prefixo)
+            read -p "Prefixo a adicionar: " prefixo
+            for f in "$dir"/$padrao; do
+                mv "$f" "$dir/$prefixo$(basename "$f")"
+                echo "Renomear: $f -> $dir/$prefixo$(basename "$f")"
+            done
+            ;;
+        sufixo)
+            read -p "Sufixo a adicionar (antes da extensão): " sufixo
+            for f in "$dir"/$padrao; do
+                nome=$(basename "$f")
+                base="${nome%.*}"
+                ext="${nome##*.}"
+                novo="${base}${sufixo}.${ext}"
+                mv "$f" "$dir/$novo"
+                echo "Renomear: $f -> $dir/$novo"
+            done
+            ;;
+        substituir)
+            read -p "Texto a substituir: " antigo
+            read -p "Novo texto: " novo
+            for f in "$dir"/$padrao; do
+                nome=$(basename "$f")
+                novo_nome="${nome//$antigo/$novo}"
+                mv "$f" "$dir/$novo_nome"
+                echo "Renomear: $f -> $dir/$novo_nome"
+            done
+            ;;
+        *)
+            echo "Ação inválida."
+            ;;
+    esac
+}
+
+menu() {
+    while true; do
+        echo ""
+        echo "|-----------> Gestão de Ficheiros e Diretorias <-----------|"
+        echo "| 1 -----> Mostrar Detalhes                                | "
+        echo "| 2 -----> Alterar Dono                                    |"
+        echo "| 3 -----> Alterar Permissões                              |"
+        echo "| 4 -----> Procurar Ficheiros/Diretorias                   |"                 
+        echo "| 5 -----> Renomear Ficheiros em Lote                      |"
+        echo "| 0 -----> Sair                                            |"
+        echo "|__________________________________________________________|"
+        echo "                                                           "
+        read -p "Escolha uma opção: " opcao
+
+        case "$opcao" in
+            1) mostrar_detalhes ;;
+            2) alterar_dono ;;
+            3) alterar_permissoes ;;
+            4) procurar_ficheiros ;;
+            5) renomear_em_lote ;;
+            0) echo "A sair :)"; break ;;
+            *) echo "Opção inválida, tente de novo por favor." ;;
+        esac
+    done
+}
+
+# Executar menu
+menu
